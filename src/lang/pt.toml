@@ -1,0 +1,7 @@
+ERR_BYTES = "Não foi possível extrair o pacote de dados da porta serial."
+ERR_INTEGRITY = "Dados passado pela porta serial corrompidos."
+ERR_MOVIMENT = "A balança está em movimento."
+ERR_SCALE = "Peso acima do limite da balança."
+ERR_UNIT = "Unidade da pesagem está incorreta."
+ERR_TARE = "A tara não foi ajustada corretamente na pesagem."
+ERR_WEIGTH = "O peso não está dentro dos limites aceitáveis."

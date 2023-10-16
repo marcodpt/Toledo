@@ -1,0 +1,7 @@
+ERR_BYTES = "Unable to extract data packet from serial port."
+ERR_INTEGRITY = "Data passed through the serial port is corrupt."
+ERR_MOVIMENT = "The scale is moving."
+ERR_SCALE = "Weight above the scale limit."
+ERR_UNIT = "Weighing unit is incorrect."
+ERR_TARE = "The tare was not adjusted correctly when weighing."
+ERR_WEIGTH = "Weight is not within acceptable limits."
