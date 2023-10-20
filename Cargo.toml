@@ -2,8 +2,23 @@
 name = "toledo"
 version = "0.1.0"
 edition = "2021"
+authors = ["Marco Di Pillo Tomic <marcodpt@protonmail.com>"]
+license = "MIT"
+description = "An IOT server written in rust for connecting via serial port to toledo scales."
+readme = "README.md"
+homepage = "https://github.com/marcodpt/toledo"
+repository = "https://github.com/marcodpt/toledo"
+keywords = [
+  "iot",
+  "serialport",
+  "server",
+  "scale",
+  "toledo"
+]
+categories = ["hardware-support"]
 
 [dependencies]
+ascii_converter = "0"
 serialport = "4"
 tiny_http = "0"
 toml = "0"

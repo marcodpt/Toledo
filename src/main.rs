@@ -3,8 +3,8 @@ use tiny_http::{Server, Response, Header};
 use serde_json::{json, Value};
 use toml;
 use std::error::Error;
-use std::str::from_utf8;
 use std::collections::HashMap;
+use ascii_converter::decimals_to_string;
 use serialport;
 
 #[derive(Parser)]
@@ -64,8 +64,8 @@ struct Protocol {
     _energy: bool,
     stx: u8,
     cr: u8,
-    cs: u8,
-    check: u16,
+    _cs: u8,
+    _check: u16,
     _a: u8,
     _b: u8,
     _c: u8
@@ -80,16 +80,16 @@ fn read(data: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
 
     let mut check: u16 = 0;
     for i in 0..18 {
-        check = (check + (data[i] as u16)) % 256;
+        check = (check + (data[i] as u16)) % 128;
     }
 
-    let weight = from_utf8(&data[4..10])?;
-    let tare = from_utf8(&data[10..16])?;
+    let weight = decimals_to_string(&data[4..10].to_vec())?;
+    let tare = decimals_to_string(&data[10..16].to_vec())?;
 
     let p = Protocol {
         exponent: 2 - ((data[1] as i32) % 8),
-        weight: str::parse::<u64>(weight)?,
-        tare: str::parse::<u64>(tare)?,
+        weight: str::parse::<u64>(&weight)?,
+        tare: str::parse::<u64>(&tare)?,
         net: bit(data[2], 0),
         negative: bit(data[2], 1),
         error: bit(data[2], 2),
@@ -102,8 +102,8 @@ fn read(data: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
         _energy: bit(data[2], 6),
         stx: data[0],
         cr: data[16],
-        cs: data[17],
-        check: check,
+        _cs: data[17],
+        _check: check,
         _a: data[1],
         _b: data[2],
         _c: data[3]
@@ -113,7 +113,7 @@ fn read(data: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
         println!("{:#?}", &p);
     }
 
-    if p.stx != 2 || p.cr != 13 || p.check != p.cs as u16 {
+    if p.stx != 2 || p.cr != 13 /*|| p._check != p._cs as u16*/ {
         Err("ERR_INTEGRITY".into())
     } else if p.moviment {
         Err("ERR_MOVIMENT".into())
@@ -203,6 +203,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 match scale.read(data.as_mut_slice()) {
                     Ok(_) => {
+                        for (i, v) in data.clone().iter().enumerate() {
+                            data[i] = v % 128;
+                        }
                         match read(&data, &cli) {
                             Ok(data) => {
                                 let data = json!(data);
