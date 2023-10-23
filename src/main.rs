@@ -5,6 +5,8 @@ use toml;
 use std::error::Error;
 use std::collections::HashMap;
 use ascii_converter::decimals_to_string;
+use std::fs::{read, write};
+use std::path::{PathBuf};
 use serialport;
 
 #[derive(Parser)]
@@ -12,7 +14,15 @@ use serialport;
 struct Cli {
     ///Device filepath.
     #[clap(required=true)]
-    path: String,
+    path: PathBuf,
+
+    ///Test mode, data is read from a file instead of the serial port.
+    #[clap(short, long, default_value = "false")]
+    test: bool,
+
+    ///Save the raw serial port data to a file for reference and testing.
+    #[clap(short, long)]
+    save: Option<PathBuf>,
 
     ///Baud rate.
     #[clap(short, long, default_value = "4800")]
@@ -76,8 +86,11 @@ fn bit (num: u8, index: u8) -> bool {
     (mask & num) > 0
 }
 
-fn read(data: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
-
+fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
+    let mut data: Vec<u8> = Vec::new();
+    for (i, v) in raw.iter().enumerate() {
+        data[i] = v % 128;
+    }
     let mut check: u16 = 0;
     for i in 0..18 {
         check = (check + (data[i] as u16)) % 128;
@@ -119,12 +132,13 @@ fn read(data: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
         Err("ERR_MOVIMENT".into())
     } else if p.error {
         Err("ERR_SCALE".into())
-    } else if
-        cli.unit.is_some() &&
-        cli.unit.clone().ok_or("unreachable")? != p.unit
-    {
-        Err("ERR_UNIT".into())
     } else {
+        if let Some(unit) = &cli.unit {
+            if unit != &p.unit {
+                return Err("ERR_UNIT".into());
+            }
+        }
+
         let weight: f64 = p.weight as f64;
         let weight = if p.negative {-1.0} else {1.0} * weight.powi(p.exponent);
 
@@ -133,29 +147,25 @@ fn read(data: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
             tare.powi(p.exponent)
         } else {0.0};
 
-        if cli.min_weight.is_some() {
-            let min_weight = cli.min_weight.ok_or("unreachable")?;
+        if let Some(min_weight) = cli.min_weight {
             if weight < min_weight {
                 return Err("ERR_WEIGTH".into());
             }
         }
 
-        if cli.max_weight.is_some() {
-            let max_weight = cli.max_weight.ok_or("unreachable")?;
+        if let Some(max_weight) = cli.max_weight {
             if weight > max_weight {
                 return Err("ERR_WEIGTH".into());
             }
         }
 
-        if cli.min_tare.is_some() {
-            let min_tare = cli.min_tare.ok_or("unreachable")?;
+        if let Some(min_tare) = cli.min_tare {
             if tare < min_tare {
                 return Err("ERR_TARE".into());
             }
         }
 
-        if cli.max_tare.is_some() {
-            let max_tare = cli.max_tare.ok_or("unreachable")?;
+        if let Some(max_tare) = cli.max_tare {
             if tare > max_tare {
                 return Err("ERR_TARE".into());
             }
@@ -177,9 +187,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let lang = if &cli.lang == "pt" { pt } else { en };
 
     let lang: HashMap<String, String> = toml::from_str(lang)?;
-    let mut scale = serialport::new(cli.path.clone(), cli.baud_rate).open()?;
+    let mut scale = match cli.test {
+        false => Some(serialport::new(
+            cli.path.as_path().as_os_str().to_str().ok_or("unreachable")?,
+            cli.baud_rate
+        ).open()?),
+        true => None
+    };
 
-    let host = format!("0.0.0.0:{}", cli.port);
+    let host = format!("localhost:{}", cli.port);
 
     let header = Header::from_bytes(
         &b"Content-Type"[..],
@@ -192,21 +208,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    println!("Toledo scale server running at: {}", host);
+    println!("Toledo scale server running at: http://{}", host);
 
     for request in server.incoming_requests() {
         let method = request.method().to_string();
         let url = request.url().to_string();
         request.respond(
-            if &method == "GET" && &url == "/" {
+            if &method != "GET" || &url != "/" {
+                Response::from_string("").with_status_code(404)
+            } else if let Some(ref mut scale) = scale {
                 let mut data: Vec<u8> = vec![0; 18];
-
                 match scale.read(data.as_mut_slice()) {
                     Ok(_) => {
-                        for (i, v) in data.clone().iter().enumerate() {
-                            data[i] = v % 128;
-                        }
-                        match read(&data, &cli) {
+                        if let Some(ref file) = cli.save {
+                            write(file, &data)?;
+                        };
+                        match parse(&data, &cli) {
                             Ok(data) => {
                                 let data = json!(data);
                                 Response::from_string(data.to_string())
@@ -230,7 +247,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             } else {
-                Response::from_string("").with_status_code(404)
+                match read(&cli.path) {
+                    Ok(data) => {
+                        match parse(&data, &cli) {
+                            Ok(data) => {
+                                let data = json!(data);
+                                Response::from_string(data.to_string())
+                                    .with_header(header.clone())
+                            },
+                            Err(err) => {
+                                let err = err.to_string();
+                                let body = lang.get(&err).unwrap_or(&err);
+                                Response::from_string(body)
+                                    .with_status_code(500)
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        if cli.debug {
+                            println!("{}", err.to_string());
+                        }
+                        let err = String::from("ERR_BYTES");
+                        let body = lang.get(&err).unwrap_or(&err);
+                        Response::from_string(body).with_status_code(500)
+                    }
+                }
             }
         )?;
     }
