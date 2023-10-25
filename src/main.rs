@@ -29,7 +29,7 @@ struct Cli {
     baud_rate: u32,
 
     ///HTTP port to listen to.
-    #[clap(short, long, default_value = "8080")]
+    #[clap(short, long, default_value = "8002")]
     port: u16,
 
     ///Error message language (en, pt).
