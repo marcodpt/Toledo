@@ -88,8 +88,8 @@ fn bit (num: u8, index: u8) -> bool {
 
 fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
     let mut data: Vec<u8> = Vec::new();
-    for (i, v) in raw.iter().enumerate() {
-        data[i] = v % 128;
+    for v in raw {
+        data.push(v % 128);
     }
     let mut check: u16 = 0;
     for i in 0..18 {
@@ -139,12 +139,13 @@ fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
             }
         }
 
+        let base: f64 = 10.0;
+        let base = base.powi(p.exponent);
         let weight: f64 = p.weight as f64;
-        let weight = if p.negative {-1.0} else {1.0} * weight.powi(p.exponent);
+        let weight = if p.negative {-1.0} else {1.0} * weight * base;
 
         let tare: f64 = if p.net {
-            let tare = p.tare as f64;
-            tare.powi(p.exponent)
+            (p.tare as f64) * base
         } else {0.0};
 
         if let Some(min_weight) = cli.min_weight {
