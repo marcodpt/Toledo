@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use ascii_converter::decimals_to_string;
 use std::fs::{read, write};
 use std::path::{PathBuf};
+use std::io::Read;
 use serialport;
 
 #[derive(Parser)]
@@ -89,12 +90,12 @@ fn bit (num: u8, index: u8) -> bool {
 fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
     let mut data: Vec<u8> = Vec::new();
     for v in raw {
-        data.push(v % 128);
+        data.push(if *v > 128 {*v - 128} else {*v});
     }
-    let mut check: u16 = 0;
+    /*let mut check: u16 = 0;
     for i in 0..18 {
         check = (check + (data[i] as u16)) % 128;
-    }
+    }*/
 
     let weight = decimals_to_string(&data[4..10].to_vec())?;
     let tare = decimals_to_string(&data[10..16].to_vec())?;
@@ -116,7 +117,7 @@ fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
         stx: data[0],
         cr: data[16],
         _cs: data[17],
-        _check: check,
+        _check: 0,
         _a: data[1],
         _b: data[2],
         _c: data[3]
@@ -192,7 +193,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         false => Some(serialport::new(
             cli.path.as_path().as_os_str().to_str().ok_or("unreachable")?,
             cli.baud_rate
-        ).open()?),
+        ).open_native()?),
         true => None
     };
 

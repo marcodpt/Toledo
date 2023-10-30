@@ -6,3 +6,12 @@ On ubuntu
 ```
 sudo apt install libudev-dev pkg-config
 ```
+
+## Releases
+Currently, only binaries for generic versions of Linux are distributed across
+releases.
+```
+sudo apt install pkg-config libssl-dev musl-tools
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+```
