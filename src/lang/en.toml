@@ -1,4 +1,4 @@
-ERR_BYTES = "Unable to extract data packet from serial port."
+ERR_PORT = "Unable to extract data packet from serial port."
 ERR_INTEGRITY = "Data passed through the serial port is corrupt."
 ERR_MOVIMENT = "The scale is moving."
 ERR_SCALE = "Weight above the scale limit."

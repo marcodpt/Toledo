@@ -427,6 +427,7 @@ version = "0.1.1"
 dependencies = [
  "ascii_converter",
  "clap",
+ "serde",
  "serde_json",
  "serialport",
  "tiny_http",

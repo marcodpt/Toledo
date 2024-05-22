@@ -1,4 +1,4 @@
-ERR_BYTES = "Não foi possível extrair o pacote de dados da porta serial."
+ERR_PORT = "Não foi possível extrair o pacote de dados da porta serial."
 ERR_INTEGRITY = "Dados passado pela porta serial corrompidos."
 ERR_MOVIMENT = "A balança está em movimento."
 ERR_SCALE = "Peso acima do limite da balança."

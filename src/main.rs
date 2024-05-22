@@ -1,14 +1,18 @@
+mod protocol;
+mod message;
+
+use protocol::Data;
+use message::Message;
+
 use clap::{Parser};
 use tiny_http::{Server, Response, Header};
-use serde_json::{json, Value};
-use toml;
 use std::error::Error;
-use std::collections::HashMap;
-use ascii_converter::decimals_to_string;
 use std::fs::{read, write};
 use std::path::{PathBuf};
 use std::io::Read;
+use std::{thread, time::Duration};
 use serialport;
+use serialport::{SerialPort, ClearBuffer::Input};
 
 #[derive(Parser)]
 #[clap(author, version, about)]
@@ -62,133 +66,22 @@ struct Cli {
     max_tare: Option<f64>,
 }
 
-#[derive(Debug)]
-struct Protocol {
-    exponent: i32,
-    weight: u64,
-    tare: u64,
-    net: bool,
-    negative: bool,
-    error: bool,
-    moviment: bool,
-    unit: String,
-    _energy: bool,
-    stx: u8,
-    cr: u8,
-    _cs: u8,
-    _check: u16,
-    _a: u8,
-    _b: u8,
-    _c: u8
-}
-
-fn bit (num: u8, index: u8) -> bool {
-    let mask = 1 << index;
-    (mask & num) > 0
-}
-
-fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<Value, Box<dyn Error>> {
-    let mut data: Vec<u8> = Vec::new();
-    for v in raw {
-        data.push(if *v > 128 {*v - 128} else {*v});
-    }
-    /*let mut check: u16 = 0;
-    for i in 0..18 {
-        check = (check + (data[i] as u16)) % 128;
-    }*/
-
-    let weight = decimals_to_string(&data[4..10].to_vec())?;
-    let tare = decimals_to_string(&data[10..16].to_vec())?;
-
-    let p = Protocol {
-        exponent: 2 - ((data[1] as i32) % 8),
-        weight: str::parse::<u64>(&weight)?,
-        tare: str::parse::<u64>(&tare)?,
-        net: bit(data[2], 0),
-        negative: bit(data[2], 1),
-        error: bit(data[2], 2),
-        moviment: bit(data[2], 3),
-        unit: if bit(data[2], 4) {
-            String::from("Kg")
-        } else {
-            String::from("Lb")
-        },
-        _energy: bit(data[2], 6),
-        stx: data[0],
-        cr: data[16],
-        _cs: data[17],
-        _check: 0,
-        _a: data[1],
-        _b: data[2],
-        _c: data[3]
-    };
-
-    if cli.debug {
-        println!("{:#?}", &p);
-    }
-
-    if p.stx != 2 || p.cr != 13 /*|| p._check != p._cs as u16*/ {
-        Err("ERR_INTEGRITY".into())
-    } else if p.moviment {
-        Err("ERR_MOVIMENT".into())
-    } else if p.error {
-        Err("ERR_SCALE".into())
-    } else {
-        if let Some(unit) = &cli.unit {
-            if unit != &p.unit {
-                return Err("ERR_UNIT".into());
-            }
-        }
-
-        let base: f64 = 10.0;
-        let base = base.powi(p.exponent);
-        let weight: f64 = p.weight as f64;
-        let weight = if p.negative {-1.0} else {1.0} * weight * base;
-
-        let tare: f64 = if p.net {
-            (p.tare as f64) * base
-        } else {0.0};
-
-        if let Some(min_weight) = cli.min_weight {
-            if weight < min_weight {
-                return Err("ERR_WEIGTH".into());
-            }
-        }
-
-        if let Some(max_weight) = cli.max_weight {
-            if weight > max_weight {
-                return Err("ERR_WEIGTH".into());
-            }
-        }
-
-        if let Some(min_tare) = cli.min_tare {
-            if tare < min_tare {
-                return Err("ERR_TARE".into());
-            }
-        }
-
-        if let Some(max_tare) = cli.max_tare {
-            if tare > max_tare {
-                return Err("ERR_TARE".into());
-            }
-        }
-
-        Ok(json!({
-            "weight": weight,
-            "tare": tare,
-            "unit": p.unit.clone()
-        }))
-    }
+fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<String, Box<dyn Error>> {
+    Ok(Data::from_toledo(raw, cli.debug)?
+        .check_unit(cli.unit.as_ref())?
+        .check_min_weight(cli.min_weight)?
+        .check_max_weight(cli.max_weight)?
+        .check_min_tare(cli.min_tare)?
+        .check_max_tare(cli.max_tare)?
+        .to_json_string()
+    )
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
-    let en = include_str!("lang/en.toml");
-    let pt = include_str!("lang/pt.toml");
-    let lang = if &cli.lang == "pt" { pt } else { en };
+    let msg = Message::new(&cli.lang)?;
 
-    let lang: HashMap<String, String> = toml::from_str(lang)?;
     let mut scale = match cli.test {
         false => Some(serialport::new(
             cli.path.as_path().as_os_str().to_str().ok_or("unreachable")?,
@@ -205,47 +98,53 @@ fn main() -> Result<(), Box<dyn Error>> {
     ).ok().ok_or("unreachable")?;
     let server = match Server::http(&host) {
         Ok(server) => server,
-        Err(msg) => {
-            return Err(msg.to_string().into());
+        Err(err) => {
+            return Err(err.to_string().into());
         }
     };
 
-    println!("Toledo scale server running at: http://{}", host);
+    println!("Serial scale server running at: http://{}", host);
 
     for request in server.incoming_requests() {
         let method = request.method().to_string();
         let url = request.url().to_string();
+        println!("{} {}", method, url);
         request.respond(
             if &method != "GET" || &url != "/" {
                 Response::from_string("").with_status_code(404)
             } else if let Some(ref mut scale) = scale {
                 let mut data: Vec<u8> = vec![0; 18];
+
+                scale.clear(Input)?;
+                thread::sleep(Duration::from_millis(500));
+
                 match scale.read(data.as_mut_slice()) {
-                    Ok(_) => {
+                    Ok(18) => {
                         if let Some(ref file) = cli.save {
                             write(file, &data)?;
                         };
                         match parse(&data, &cli) {
                             Ok(data) => {
-                                let data = json!(data);
-                                Response::from_string(data.to_string())
+                                Response::from_string(data)
                                     .with_header(header.clone())
                             },
                             Err(err) => {
                                 let err = err.to_string();
-                                let body = lang.get(&err).unwrap_or(&err);
-                                Response::from_string(body)
+                                Response::from_string(msg.err(&err))
                                     .with_status_code(500)
                             }
                         }
+                    },
+                    Ok(_) => {
+                        Response::from_string(msg.err("ERR_INTEGRITY"))
+                            .with_status_code(500)
                     },
                     Err(err) => {
                         if cli.debug {
                             println!("{}", err.to_string());
                         }
-                        let err = String::from("ERR_BYTES");
-                        let body = lang.get(&err).unwrap_or(&err);
-                        Response::from_string(body).with_status_code(500)
+                        Response::from_string(msg.err("ERR_PORT"))
+                            .with_status_code(500)
                     }
                 }
             } else {
@@ -253,14 +152,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Ok(data) => {
                         match parse(&data, &cli) {
                             Ok(data) => {
-                                let data = json!(data);
-                                Response::from_string(data.to_string())
+                                Response::from_string(data)
                                     .with_header(header.clone())
                             },
                             Err(err) => {
                                 let err = err.to_string();
-                                let body = lang.get(&err).unwrap_or(&err);
-                                Response::from_string(body)
+                                Response::from_string(msg.err(&err))
                                     .with_status_code(500)
                             }
                         }
@@ -269,9 +166,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         if cli.debug {
                             println!("{}", err.to_string());
                         }
-                        let err = String::from("ERR_BYTES");
-                        let body = lang.get(&err).unwrap_or(&err);
-                        Response::from_string(body).with_status_code(500)
+                        Response::from_string(msg.err("ERR_PORT"))
+                            .with_status_code(500)
                     }
                 }
             }
