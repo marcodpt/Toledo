@@ -1,18 +1,16 @@
 mod protocol;
 mod message;
+mod reader;
 
 use protocol::Data;
 use message::Message;
+use reader::Reader;
 
 use clap::{Parser};
 use tiny_http::{Server, Response, Header};
 use std::error::Error;
-use std::fs::{read, write};
+use std::fs::write;
 use std::path::{PathBuf};
-use std::io::Read;
-use std::{thread, time::Duration};
-use serialport;
-use serialport::{SerialPort, ClearBuffer::Input};
 
 #[derive(Parser)]
 #[clap(author, version, about)]
@@ -21,15 +19,11 @@ struct Cli {
     #[clap(required=true)]
     path: PathBuf,
 
-    ///Test mode, data is read from a file instead of the serial port.
-    #[clap(short, long, default_value = "false")]
-    test: bool,
-
     ///Save the raw serial port data to a file for reference and testing.
     #[clap(short, long)]
     save: Option<PathBuf>,
 
-    ///Baud rate.
+    ///Baud rate. Set to zero for test mode where data is read from a file one line per request.
     #[clap(short, long, default_value = "4800")]
     baud_rate: u32,
 
@@ -66,8 +60,15 @@ struct Cli {
     max_tare: Option<f64>,
 }
 
-fn parse(raw: &Vec<u8>, cli: &Cli) -> Result<String, Box<dyn Error>> {
-    Ok(Data::from_toledo(raw, cli.debug)?
+fn read_scale(
+    reader: &mut Reader,
+    cli: &Cli
+) -> Result<String, Box<dyn Error>> {
+    let data = reader.read()?;
+    if let Some(ref file) = cli.save {
+        write(file, &data)?;
+    }
+    Ok(Data::from_toledo(&data, cli.debug)?
         .check_unit(cli.unit.as_ref())?
         .check_min_weight(cli.min_weight)?
         .check_max_weight(cli.max_weight)?
@@ -81,14 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     let msg = Message::new(&cli.lang)?;
-
-    let mut scale = match cli.test {
-        false => Some(serialport::new(
-            cli.path.as_path().as_os_str().to_str().ok_or("unreachable")?,
-            cli.baud_rate
-        ).open_native()?),
-        true => None
-    };
+    let mut reader = Reader::new(&cli.path, cli.baud_rate)?;
 
     let host = format!("localhost:{}", cli.port);
 
@@ -112,61 +106,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         request.respond(
             if &method != "GET" || &url != "/" {
                 Response::from_string("").with_status_code(404)
-            } else if let Some(ref mut scale) = scale {
-                let mut data: Vec<u8> = vec![0; 18];
-
-                scale.clear(Input)?;
-                thread::sleep(Duration::from_millis(500));
-
-                match scale.read(data.as_mut_slice()) {
-                    Ok(18) => {
-                        if let Some(ref file) = cli.save {
-                            write(file, &data)?;
-                        };
-                        match parse(&data, &cli) {
-                            Ok(data) => {
-                                Response::from_string(data)
-                                    .with_header(header.clone())
-                            },
-                            Err(err) => {
-                                let err = err.to_string();
-                                Response::from_string(msg.err(&err))
-                                    .with_status_code(500)
-                            }
-                        }
-                    },
-                    Ok(_) => {
-                        Response::from_string(msg.err("ERR_INTEGRITY"))
-                            .with_status_code(500)
-                    },
-                    Err(err) => {
-                        if cli.debug {
-                            println!("{}", err.to_string());
-                        }
-                        Response::from_string(msg.err("ERR_PORT"))
-                            .with_status_code(500)
-                    }
-                }
             } else {
-                match read(&cli.path) {
-                    Ok(data) => {
-                        match parse(&data, &cli) {
-                            Ok(data) => {
-                                Response::from_string(data)
-                                    .with_header(header.clone())
-                            },
-                            Err(err) => {
-                                let err = err.to_string();
-                                Response::from_string(msg.err(&err))
-                                    .with_status_code(500)
-                            }
-                        }
+                match read_scale(&mut reader, &cli) {
+                    Ok(json) => {
+                        Response::from_string(json)
+                            .with_header(header.clone())
                     },
                     Err(err) => {
-                        if cli.debug {
-                            println!("{}", err.to_string());
-                        }
-                        Response::from_string(msg.err("ERR_PORT"))
+                        let err = err.to_string();
+                        Response::from_string(msg.err(&err))
                             .with_status_code(500)
                     }
                 }
