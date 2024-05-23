@@ -6,11 +6,12 @@ use protocol::Data;
 use message::Message;
 use reader::Reader;
 
-use clap::{Parser};
+use clap::Parser;
 use tiny_http::{Server, Response, Header};
 use std::error::Error;
-use std::fs::write;
-use std::path::{PathBuf};
+use std::fs::OpenOptions;
+use std::path::PathBuf;
+use std::io::Write;
 
 #[derive(Parser)]
 #[clap(author, version, about)]
@@ -66,7 +67,12 @@ fn read_scale(
 ) -> Result<String, Box<dyn Error>> {
     let data = reader.read()?;
     if let Some(ref file) = cli.save {
-        write(file, &data)?;
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .append(true)
+            .open(file)?
+            .write_all(&data)?;
     }
     Ok(Data::from_toledo(&data, cli.debug)?
         .check_unit(cli.unit.as_ref())?
@@ -102,7 +108,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     for request in server.incoming_requests() {
         let method = request.method().to_string();
         let url = request.url().to_string();
-        println!("{} {}", method, url);
         request.respond(
             if &method != "GET" || &url != "/" {
                 Response::from_string("").with_status_code(404)

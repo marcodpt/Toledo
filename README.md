@@ -15,3 +15,10 @@ sudo apt install pkg-config libssl-dev musl-tools
 rustup target add x86_64-unknown-linux-musl
 cargo build --release --target x86_64-unknown-linux-musl
 ```
+
+## Todo
+ - set many attempts to read in serial port 
+ - every error message should be unique
+ - rename package to serialscale
+
+## Tests
