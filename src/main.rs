@@ -84,6 +84,23 @@ fn read_scale(
     )
 }
 
+fn read_scale_attempts(
+    reader: &mut Reader,
+    cli: &Cli,
+    attempts: u8
+) -> Result<String, Box<dyn Error>> {
+    match read_scale(reader, cli) {
+        Ok(data) => Ok(data),
+        Err(err) => {
+            if attempts > 1 && cli.baud_rate > 0 {
+                read_scale_attempts(reader, cli, attempts - 1)
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -112,7 +129,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if &method != "GET" || &url != "/" {
                 Response::from_string("").with_status_code(404)
             } else {
-                match read_scale(&mut reader, &cli) {
+                match read_scale_attempts(&mut reader, &cli, 4) {
                     Ok(json) => {
                         Response::from_string(json)
                             .with_header(header.clone())

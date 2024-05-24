@@ -5,7 +5,7 @@ use std::error::Error;
 use std::io::Read;
 use std::{thread, time::Duration};
 
-const WAIT_MILLISECONDS: u64 = 500;
+const WAIT_MILLISECONDS: u64 = 250;
 
 pub struct Serial (TTYPort);
 

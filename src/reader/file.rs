@@ -18,14 +18,12 @@ impl File {
     pub fn read(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
         let a = self.index;
         let b = self.index+18;
-        let stop = b >= self.data.len();
-        let row = if stop {
-            self.data[a..].iter().cloned().collect()
+        let l = self.data.len();
+        self.index = if b >= l {0} else {b};
+        if b > l {
+            Err("ERR_INTEGRITY".into())
         } else {
-            self.data[a..b].iter().cloned().collect()
-        };
-        self.index = if stop {0} else {b};
-
-        Ok(row)
+            Ok(self.data[a..b].iter().cloned().collect())
+        }
     }
 }

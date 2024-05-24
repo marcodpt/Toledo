@@ -17,10 +17,6 @@ cargo build --release --target x86_64-unknown-linux-musl
 ```
 
 ## Todo
- - save should be unblocking in case of error
- - set many attempts to read in serial port 
- - every error message should be unique
- - solve precision problem
  - rename package to serialscale
  - write docs
 
