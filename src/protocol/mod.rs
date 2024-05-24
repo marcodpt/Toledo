@@ -71,7 +71,7 @@ impl Data {
         max_weight: Option<f64>
     ) -> Result<&Self, Box<dyn Error>> {
         if let Some(max_weight) = max_weight {
-            if self.weight < max_weight {
+            if self.weight > max_weight {
                 return Err("ERR_WEIGTH".into());
             }
         }
@@ -95,7 +95,7 @@ impl Data {
         max_tare: Option<f64>
     ) -> Result<&Self, Box<dyn Error>> {
         if let Some(max_tare) = max_tare {
-            if self.tare < max_tare {
+            if self.tare > max_tare {
                 return Err("ERR_TARE".into());
             }
         }

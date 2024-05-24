@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let header = Header::from_bytes(
         &b"Content-Type"[..],
-        &b"application/json"[..]
+        &b"application/json; charset=UTF-8"[..]
     ).ok().ok_or("unreachable")?;
     let server = match Server::http(&host) {
         Ok(server) => server,
